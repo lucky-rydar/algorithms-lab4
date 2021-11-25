@@ -1,5 +1,6 @@
 import numpy as np
 import operator
+from numpy.core.numeric import cross
 
 from numpy.random.mtrand import random
 import math
@@ -51,12 +52,13 @@ class Graph:
 
 
 class GeneticAlgorithmTSP:
-    def __init__(self, generations=100, population_size=10, tournamentSize=4, mutationRate=0.1, elitismRate=0.1):
+    def __init__(self, generations=100, population_size=10, tournamentSize=4, mutationRate=0.1, elitismRate=0.1, crossover_type = 'two_points'):
         self.generations = generations
         self.population_size = population_size
         self.tournamentSize = tournamentSize
         self.mutationRate = mutationRate
         self.elitismRate = elitismRate
+        self.crossover_type = crossover_type
         
         self.way_data_plot = []
         self.best_route = []
@@ -93,8 +95,14 @@ class GeneticAlgorithmTSP:
                 parent2 = self.__tournamentSelection(graph, population)
                 #while parent2 == parent1:
                 #    parent2 = self.__tournamentSelection(graph, population)
-                
-                offspring = self.__crossover(parent1, parent2)
+                offspring = []
+                if(self.crossover_type == 'two_points'):
+                    offspring = self.__crossover_two_points(parent1, parent2)
+                elif(self.crossover_type == 'one_point'):
+                    offspring = self.__crossover_one_point(parent1, parent2)
+                elif(self.crossover_type == 'uniform'):
+                    offspring = self.__crossover_uniform(parent1, parent2)
+
                 newPopulation.append(offspring)
 
             for gen in range(elitismOffset, self.population_size):
@@ -116,9 +124,6 @@ class GeneticAlgorithmTSP:
             vs = np.random.permutation(graph_nodes)
             ret.append(list(vs))
         return ret
-
-        # instead of that shit it should return arrays
-        return [''.join(v for v in np.random.permutation(graph_nodes)) for i in range(self.population_size)]
     
 
     def __computeFitness(self, graph, population):
@@ -141,7 +146,7 @@ class GeneticAlgorithmTSP:
         return tournament_contestants[np.argmin(tournament_contestants_fitness)]
     
 
-    def __crossover(self, parent1, parent2):
+    def __crossover_two_points(self, parent1, parent2):
         low, high = self.__computeLowHighIndexes(parent1)
         to_inherit = [parent1[i] for i in range(low, high)]
         offspring = parent2[:]
@@ -152,12 +157,58 @@ class GeneticAlgorithmTSP:
         return offspring
 
 
+    def __crossover_one_point(self, parent1, parent2):
+        # it is  the same as upper but generate one random number
+        # and then get some part from first parent and another from the second
+        
+        point = np.random.randint(0, len(parent1))
+        # everything before point  and point is from parent1
+        # everything after  point is from parent2
+
+        offspring = parent2[:]
+        to_inherit = [parent1[i] for i in range(0, point)]
+        for item in to_inherit:
+            p1_idx = parent1.index(item)
+            p2_idx = offspring.index(item)
+            offspring[p1_idx], offspring[p2_idx] = offspring[p2_idx], offspring[p1_idx]
+        return offspring
+
+
+    def __crossover_uniform(self, parent1, parent2):
+        # here just generate array with 0 and 1
+        # and then take some gens from 1 parent and some from 2 perent
+        # 
+        # in my case it is needed to swap gens where 1 inside of parent 2
+        
+        points = [np.random.randint(0, 2) for _ in range(len(parent1))]
+
+        to_inherit = []
+        offspring = parent2[:]
+        for i in range(len(points)):
+            if points[i] == 1:
+                to_inherit.append(parent1[i])
+
+        for item in to_inherit:
+            p1_idx = parent1.index(item)
+            p2_idx = offspring.index(item)
+            offspring[p1_idx], offspring[p2_idx] = offspring[p2_idx], offspring[p1_idx]
+        return offspring
+
+
     def __mutate(self, genome):
-        if np.random.random() < self.mutationRate:
-            index_low, index_high = self.__computeLowHighIndexes(genome)
-            return self.__swap(index_low, index_high, genome)
+        if self.mutationRate > 1:
+            for i in range(int(self.mutationRate)):
+                if np.random.random() < self.mutationRate:
+                    index_low, index_high = self.__computeLowHighIndexes(genome)
+                    return self.__swap(index_low, index_high, genome)
+                else:
+                    return genome
         else:
-            return genome
+            if np.random.random() < self.mutationRate:
+                index_low, index_high = self.__computeLowHighIndexes(genome)
+                return self.__swap(index_low, index_high, genome)
+            else:
+                return genome
 
 
     def __computeLowHighIndexes(self, arr):
@@ -184,18 +235,37 @@ def generate_graph(how_much):
 
 
 def main():
+
     graph = generate_graph(300)
 
-    ga_tsp = GeneticAlgorithmTSP(generations=10000,
-                        population_size=10,
-                        tournamentSize=4,
-                        mutationRate=0.1,
-                        elitismRate=0.2)
-    
-    optimal_path, path_cost = ga_tsp.optimize(graph)
-    print ('\nPath: {0}, Cost: {1}'.format(optimal_path, path_cost))
+    gs = [graph, graph, graph]
+    crossovers = ['two_points', 'one_point', 'uniform']
+    shortest_ways = []
 
-    plt.plot(ga_tsp.way_data_plot)
+    results_plot = []
+
+    for i in range(len(gs)):
+        ga_tsp = GeneticAlgorithmTSP(generations=1000,
+                        population_size=20,
+                        tournamentSize=4,
+                        mutationRate=10,
+                        elitismRate=0.1,
+                        crossover_type=crossovers[i])
+    
+        optimal_path, path_cost = ga_tsp.optimize(gs[i])
+        shortest_ways.append((optimal_path, path_cost))
+        results_plot.append(ga_tsp.way_data_plot)
+
+    print('\n'*2)
+    for i in range(len(shortest_ways)):
+        print ('Crossover type: {0}, Cost: {1}\n'.format(crossovers[i], shortest_ways[i][1]))
+    
+    fig, axs = plt.subplots(3, 1, figsize=(5, 15))
+    for i in range(len(gs)):
+        axs[i].plot(results_plot[i])
+        axs[i].set_title(crossovers[i])
+
+
     plt.show()
 
 
